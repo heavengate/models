@@ -21,34 +21,87 @@ from __future__ import unicode_literals
 import numpy as np
 import cv2
 from PIL import Image, ImageEnhance
-import random
 
 import box_utils
 
 
-def random_distort(img):
-    def random_brightness(img, lower=0.5, upper=1.5):
-        e = np.random.uniform(lower, upper)
-        return ImageEnhance.Brightness(img).enhance(e)
- 
-    def random_contrast(img, lower=0.5, upper=1.5):
-        e = np.random.uniform(lower, upper)
-        return ImageEnhance.Contrast(img).enhance(e)
- 
-    def random_color(img, lower=0.5, upper=1.5):
-        e = np.random.uniform(lower, upper)
-        return ImageEnhance.Color(img).enhance(e)
- 
-    ops = [random_brightness, random_contrast, random_color]
-    np.random.shuffle(ops)
- 
-    img = Image.fromarray(img)
-    img = ops[0](img)
-    img = ops[1](img)
-    img = ops[2](img)
-    img = np.asarray(img)
- 
-    return img
+def random_color_distort(img, brightness_delta=32, contrast_low=0.5, contrast_high=1.5,
+                        saturation_low=0.5, saturation_high=1.5, hue_delta=18):
+    def brightness_distort(img, delta, prob=0.5):
+        if np.random.uniform(0, 1) > prob:
+            delta = np.random.uniform(-delta, delta)
+            img += delta
+        return img
+
+    def constrast_distort(img, low, high, prob=0.5):
+        if np.random.uniform(0, 1) > prob:
+            alpha = np.random.uniform(low, high)
+            img *= alpha
+        return img
+
+    def saturation_distort(img, low, high, prob=0.5):
+        if np.random.uniform(0, 1) > prob:
+            alpha = np.random.uniform(low, high)
+            gray = img * np.array([[[0.299, 0.587, 0.114]]])
+            gray = np.sum(gray, axis=2, keepdims=True)
+            gray *= (1. - alpha)
+            img *= alpha
+            img += gray
+        return img
+
+    def hue_distort(img, delta, prob=0.5):
+        if np.random.uniform(0, 1) > prob:
+            alpha = np.random.uniform(-delta, delta)
+            u = np.cos(alpha * np.pi)
+            w = np.sin(alpha * np.pi)
+            bt = np.array([[1.0, 0.0, 0.0],
+                           [0.0, u, -w],
+                           [0.0, w, -u]])
+            tyiq = np.array([[0.299, 0.587, 0.114],
+                             [0.596, -0.274, -0.321],
+                             [0.211, -0.523, 0.311]])
+            ityiq = np.array([[1.0, 0.956, 0.621],
+                              [1.0, -0.272, -0.647],
+                              [1.0, -1.107, 1.705]])
+            t = np.dot(np.dot(ityiq, bt), tyiq)
+            img = np.dot(img, t)
+        return img
+
+    img = brightness_distort(img, brightness_delta)
+    if np.random.randint(0, 2):
+        img = constrast_distort(img, contrast_low, contrast_high)
+        img = saturation_distort(img, saturation_low, saturation_high)
+        img = hue_distort(img, hue_delta)
+    else:
+        img = saturation_distort(img, saturation_low, saturation_high)
+        img = hue_distort(img, hue_delta)
+        img = constrast_distort(img, contrast_low, contrast_high)
+    return img.astype('float32')
+
+
+# def random_distort(img):
+#     def random_brightness(img, lower=0.5, upper=1.5):
+#         e = np.random.uniform(lower, upper)
+#         return ImageEnhance.Brightness(img).enhance(e)
+#  
+#     def random_contrast(img, lower=0.5, upper=1.5):
+#         e = np.random.uniform(lower, upper)
+#         return ImageEnhance.Contrast(img).enhance(e)
+#  
+#     def random_color(img, lower=0.5, upper=1.5):
+#         e = np.random.uniform(lower, upper)
+#         return ImageEnhance.Color(img).enhance(e)
+#  
+#     ops = [random_brightness, random_contrast, random_color]
+#     np.random.shuffle(ops)
+#  
+#     img = Image.fromarray(img)
+#     img = ops[0](img)
+#     img = ops[1](img)
+#     img = ops[2](img)
+#     img = np.asarray(img)
+#  
+#     return img
 
 
 def random_crop(img, boxes, labels, scores, scales=[0.3, 1.0], max_ratio=2.0, constraints=None, max_trial=50):
@@ -64,18 +117,18 @@ def random_crop(img, boxes, labels, scores, scales=[0.3, 1.0], max_ratio=2.0, co
                 (0.9, 1.0),
                 (0.0, 1.0)]
 
-    img = Image.fromarray(img)
+    img = Image.fromarray(img.astype('uint8'))
     w, h = img.size
     crops = [(0, 0, w, h)]
     for min_iou, max_iou in constraints:
         for _ in range(max_trial):
-            scale = random.uniform(scales[0], scales[1])
-            aspect_ratio = random.uniform(max(1 / max_ratio, scale * scale), \
+            scale = np.random.uniform(scales[0], scales[1])
+            aspect_ratio = np.random.uniform(max(1 / max_ratio, scale * scale), \
                                           min(max_ratio, 1 / scale / scale))
             crop_h = int(h * scale / np.sqrt(aspect_ratio))
             crop_w = int(w * scale * np.sqrt(aspect_ratio))
-            crop_x = random.randrange(w - crop_w)
-            crop_y = random.randrange(h - crop_h)
+            crop_x = np.random.randint(0, w - crop_w)
+            crop_y = np.random.randint(0, h - crop_h)
             crop_box = np.array([[
                 (crop_x + crop_w / 2.0) / w,
                 (crop_y + crop_h / 2.0) / h,
@@ -99,8 +152,8 @@ def random_crop(img, boxes, labels, scores, scales=[0.3, 1.0], max_ratio=2.0, co
     img = np.asarray(img)
     return img, boxes, labels, scores
 
-def random_flip(img, gtboxes, thresh=0.5):
-    if random.random() > thresh:
+def random_flip(img, gtboxes, prob=0.5):
+    if np.random.uniform(0, 1) > prob:
         img = img[:, ::-1, :]
         gtboxes[:, 0] = 1.0 - gtboxes[:, 0]
     return img, gtboxes
@@ -113,30 +166,30 @@ def random_interp(img, size):
         cv2.INTER_CUBIC,
         cv2.INTER_LANCZOS4,
         ]
-    interp = interp_method[random.randint(0, len(interp_method) - 1)]
+    interp = interp_method[np.random.randint(0, len(interp_method))]
     h, w, _ = img.shape
     im_scale_x = size / float(w)
     im_scale_y = size / float(h)
     img = cv2.resize(img, None, None, fx=im_scale_x, fy=im_scale_y, interpolation=interp)
     return img
 
-def random_expand(img, gtboxes, max_ratio=4., fill=None, keep_ratio=True, thresh=0.5):
-    if random.random() > thresh:
+def random_expand(img, gtboxes, max_ratio=4., fill=None, keep_ratio=True, prob=0.5):
+    if np.random.uniform(0, 1) > prob:
         return img, gtboxes
 
     if max_ratio < 1.0:
         return img, gtboxes
     
     h, w, c = img.shape
-    ratio_x = random.uniform(1, max_ratio)
+    ratio_x = np.random.uniform(1, max_ratio)
     if keep_ratio:
         ratio_y = ratio_x
     else:
-        ratio_y = random.uniform(1, max_ratio)
+        ratio_y = np.random.uniform(1, max_ratio)
     oh = int(h * ratio_y)
     ow = int(w * ratio_x)
-    off_x = random.randint(0, ow -w)
-    off_y = random.randint(0, oh -h)
+    off_x = np.random.randint(0, ow -w)
+    off_y = np.random.randint(0, oh -h)
 
     out_img = np.zeros((oh, ow, c))
     if fill and len(fill) == c:
@@ -195,10 +248,10 @@ def image_mixup(img1, gtboxes1, gtlabels1, gtscores1, img2, gtboxes2, gtlabels2,
     gtboxes[:gt_num] = gtboxes_all[:gt_num]
     gtlabels[:gt_num] = gtlabels_all[:gt_num]
     gtscores[:gt_num] = gtscores_all[:gt_num]
-    return img.astype('uint8'), gtboxes, gtlabels, gtscores
+    return img.astype('float32'), gtboxes, gtlabels, gtscores
 
 def image_augment(img, gtboxes, gtlabels, gtscores,  size, means=None):
-    img = random_distort(img)
+    img = random_color_distort(img.astype('float32'))
     img, gtboxes = random_expand(img, gtboxes, fill=means)
     img, gtboxes, gtlabels, gtscores = random_crop(img, gtboxes, gtlabels, gtscores)
     img = random_interp(img, size)
