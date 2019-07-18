@@ -80,14 +80,14 @@ def mobile_net(img, scale=1.0, is_test=True):
     tmp = depthwise_separable(tmp, 128, 256, 128, 2, scale, is_test=is_test, name='conv3_2')
     # 1/8
     # 38x38
-    tmp = depthwise_separable(tmp, 256, 256, 256, 1, scale, is_test=is_test, name='conv4_1')
     blocks.append(tmp)
+    tmp = depthwise_separable(tmp, 256, 256, 256, 1, scale, is_test=is_test, name='conv4_1')
     tmp = depthwise_separable(tmp, 256, 512, 256, 2, scale, is_test=is_test, name='conv4_2')
 
     # 1/16
+    blocks.append(tmp)
     for i in range(5):
         tmp = depthwise_separable(tmp, 512, 512, 512, 1, scale, is_test=is_test, name='conv5_'+str(i+1))
-    blocks.append(tmp)
 
     # 19x19
     tmp = depthwise_separable(tmp, 512, 1024, 512, 2, scale, is_test=is_test, name='conv5_6')
