@@ -18,6 +18,7 @@ from __future__ import print_function
 
 import os
 import os.path as osp
+import sys
 import shutil
 import requests
 import tqdm
@@ -62,6 +63,7 @@ DATASETS = {
     ], ["VOCdevkit/VOC_all"]),
 }
 
+AUTO_DOWNLOAD_DATASET = False
 DOWNLOAD_RETRY_LIMIT = 3
 
 
@@ -99,7 +101,7 @@ def get_dataset_path(path, annotation, image_dir):
                     return data_dir
 
             for url, md5sum in dataset[0]:
-                get_path(url, data_dir, md5sum)
+                get_path(url, data_dir, md5sum, True)
 
             # voc should merge dir and create list after download
             if name == 'voc':
@@ -140,7 +142,7 @@ def map_path(url, root_dir):
     return osp.join(root_dir, fpath)
 
 
-def get_path(url, root_dir, md5sum=None):
+def get_path(url, root_dir, md5sum=None, check_auto_download=False):
     """ Download from given url to root_dir.
     if file or directory specified by url is exists under
     root_dir, return the path directly, otherwise download
@@ -151,6 +153,8 @@ def get_path(url, root_dir, md5sum=None):
                     WEIGHTS_HOME or DATASET_HOME
     md5sum (str): md5 sum of download package
     """
+    global AUTO_DOWNLOAD_DATASET
+
     # parse path after download to decompress under root_dir
     fullpath = map_path(url, root_dir)
 
@@ -167,6 +171,18 @@ def get_path(url, root_dir, md5sum=None):
     if osp.exists(fullpath):
         logger.info("Found {}".format(fullpath))
     else:
+        logger.info("Not found {}, do you mean to auto download "
+                    "it?".format(fullpath))
+        if check_auto_download and not AUTO_DOWNLOAD_DATASET:
+            ans = raw_input("Auto download? [y/n]: ")
+            while ans not in ['y', 'n', 'Y', 'N', 
+                              'yes', 'not', 'Yes', 'Not']:
+                ans = raw_input("Auto download? please input 'y' or 'n': ")
+            if ans in ['y', 'Y', 'yes', 'Yes']:
+                AUTO_DOWNLOAD_DATASET = True
+            else:
+                logger.error("Local dataset invalid.")
+                sys.exit(1)
         fullname = _download(url, root_dir, md5sum)
         _decompress(fullname)
 
